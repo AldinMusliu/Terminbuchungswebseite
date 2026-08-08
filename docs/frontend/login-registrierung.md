@@ -55,11 +55,12 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let cancelled = false;
 
+    // ensureProfile wird bewusst NICHT hier aufgerufen, sondern nur unten in
+    // onAuthStateChange - siehe Bugfix-Hinweis weiter unten.
     supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
       if (cancelled) return;
       setSession(initialSession);
       setLoading(false);
-      if (initialSession?.user) ensureProfile(initialSession.user);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
@@ -98,22 +99,55 @@ normalem Login), ob schon eine `profiles`-Zeile existiert, und legt sie
 sonst nach:
 
 ```jsx
+const sichergestellteProfile = new Set();
+
 async function ensureProfile(user) {
-  const { data: existing } = await supabase
+  if (sichergestellteProfile.has(user.id)) return;
+
+  const { data: existing, error: selectError } = await supabase
     .from('profiles')
     .select('id')
     .eq('id', user.id)
     .maybeSingle();
 
-  if (existing) return;
+  if (selectError) {
+    console.error('Profil konnte nicht geprueft werden:', selectError.message);
+    return;
+  }
 
-  await supabase.from('profiles').insert({
+  if (existing) {
+    sichergestellteProfile.add(user.id);
+    return;
+  }
+
+  const { error: insertError } = await supabase.from('profiles').insert({
     id: user.id,
     full_name: user.user_metadata?.full_name ?? '',
     phone: user.user_metadata?.phone ?? null,
   });
+
+  if (insertError && insertError.code !== '23505') {
+    console.error('Profil konnte nicht angelegt werden:', insertError.message);
+    return;
+  }
+
+  sichergestellteProfile.add(user.id);
 }
 ```
+
+**Bugfix (Code Review durch zweiten AI-Helfer):** Die erste Version hat weder
+den Insert-Fehler ausgewertet, noch verhindert, dass `ensureProfile`
+mehrfach parallel laeuft. Grund: `onAuthStateChange` feuert beim
+Registrieren sofort mit der aktuellen Session (Event `INITIAL_SESSION`) —
+zusaetzlich zur separaten `getSession()`-Abfrage beim Start. Bei einer
+bestehenden Session liefen dadurch zwei `ensureProfile`-Aufrufe parallel,
+beide lasen "Profil existiert nicht" und versuchten zu inserten; der
+zweite Insert kollidierte mit dem Primary-Key-Constraint und scheiterte
+still, weil der Fehler nicht ausgewertet wurde. Fix: `ensureProfile` wird
+jetzt nur noch aus `onAuthStateChange` aufgerufen (nicht mehr zusaetzlich
+aus `getSession()`), der Insert-Fehler wird ausgewertet (ein
+`unique_violation`/`23505` ist dabei erwartet und kein echter Fehler), und
+ein Set merkt sich pro Tab bereits sichergestellte Profile.
 
 Der Name kommt aus `user.user_metadata.full_name` — der wird beim Signup
 mitgeschickt (siehe unten) und ist reiner Anzeige-Text, **keine**
@@ -286,6 +320,12 @@ Fehlermeldung im Terminal.
 **Fix:** die reine Hook-Datei wurde eindeutig zu `authHooks.js` umbenannt,
 damit sich kein Dateiname mehr nur durch Gross-/Kleinschreibung
 unterscheidet.
+
+## Behobene Bugs (Code Review durch zweiten AI-Helfer)
+
+- **Race Condition in `ensureProfile`**: kein Insert-Fehler ausgewertet und
+  potenziell doppelter, paralleler Aufruf beim Start — siehe Abschnitt
+  weiter oben.
 
 ## Offene Punkte
 

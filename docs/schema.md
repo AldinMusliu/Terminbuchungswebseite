@@ -1,6 +1,7 @@
-# Datenbank-Schema (Vorschlag)
+# Datenbank-Schema
 
-Status: **Entwurf — noch nicht in Supabase umgesetzt.**
+Status: **Live in Supabase.** Migration `supabase/migrations/20260808120000_initial_schema.sql`
+wurde erfolgreich ausgeführt (RLS aktiv, Doppelbuchungsschutz verifiziert).
 
 ## Übersicht
 
@@ -143,7 +144,7 @@ create extension if not exists btree_gist;
 
 alter table public.termine
   add constraint termine_keine_ueberschneidung
-  exclude using gist (tsrange(start_zeit, end_zeit) with &&)
+  exclude using gist (tstzrange(start_zeit, end_zeit) with &&)
   where (status = 'bestaetigt');
 ```
 
@@ -165,6 +166,8 @@ Details und Begründungen: siehe `docs/decisions.md`.
 
 ## Offen / noch zu klären
 
+- `dienstleistungen` hat noch kein Preis-Feld, das Figma-Mockup zeigt aber überall Preise
+  (z.B. "CHF 90") — Migration nötig, sobald die Dienstleistungsseite gebaut wird.
 - Buchungen nur für registrierte Kundinnen (`kundin_id` ist Pflicht, kein Gast-Feld) — auch wenn die Admin den Termin selbst einträgt, muss vorher ein Kundinnen-Konto existieren.
 - Trigger, der beim Buchen prüft, ob der gewählte Slot innerhalb der festen Öffnungszeiten liegt und nicht mit einer `sperrzeiten`-Zeile kollidiert — wird beim Bau der Buchungslogik ergänzt, nicht Teil des Basisschemas.
 - Kundinnen können eigene Termine nur stornieren (Status ändern), nicht Zeit/Dienstleistung nachträglich ändern — wird über einen Trigger bei der Buchungs-UI umgesetzt. Die Admin ist davon ausgenommen und darf jeden Termin frei bearbeiten.
