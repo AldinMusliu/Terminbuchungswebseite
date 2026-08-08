@@ -41,7 +41,7 @@ export default function AuthSheet({ initialMode = 'login', bookingContext, onClo
     event.preventDefault();
     resetMeldungen();
     if (password !== passwordConfirm) {
-      setError('Die Passwoerter stimmen nicht ueberein.');
+      setError('Die Passwörter stimmen nicht überein.');
       return;
     }
     setLoading(true);
@@ -59,7 +59,7 @@ export default function AuthSheet({ initialMode = 'login', bookingContext, onClo
       onClose();
       return;
     }
-    setInfo('Fast geschafft: Wir haben dir einen Bestaetigungslink per E-Mail geschickt.');
+    setInfo('Fast geschafft: Wir haben dir einen Bestätigungslink per E-Mail geschickt.');
   };
 
   const title = bookingContext
@@ -67,12 +67,12 @@ export default function AuthSheet({ initialMode = 'login', bookingContext, onClo
       ? 'Fast geschafft'
       : 'Konto erstellen'
     : mode === 'login'
-      ? 'Willkommen zurueck'
+      ? 'Willkommen zurück'
       : 'Konto erstellen';
 
   const subtitle = bookingContext
     ? mode === 'login'
-      ? `${bookingContext.serviceName} am ${bookingContext.whenText}. Melde dich an, um deinen Termin zu bestaetigen.`
+      ? `${bookingContext.serviceName} am ${bookingContext.whenText}. Melde dich an, um deinen Termin zu bestätigen.`
       : 'Erstelle ein Konto, um deine Termine ganz einfach zu verwalten.'
     : mode === 'login'
       ? 'Melde dich an, um deine Termine zu verwalten.'
@@ -164,7 +164,7 @@ export default function AuthSheet({ initialMode = 'login', bookingContext, onClo
               />
             </div>
             <div className="field">
-              <label htmlFor="register-password-confirm">Passwort bestaetigen</label>
+              <label htmlFor="register-password-confirm">Passwort bestätigen</label>
               <input
                 id="register-password-confirm"
                 type="password"
