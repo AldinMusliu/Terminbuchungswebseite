@@ -1,0 +1,167 @@
+/* Gemeinsame Bausteine fuer Bottom-Sheet-Modals (AuthSheet, MeineTermine) */
+
+.sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--color-overlay);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 100;
+}
+
+@media (min-width: 640px) {
+  .sheet-overlay {
+    align-items: center;
+    padding: 20px;
+  }
+}
+
+.sheet {
+  background: var(--color-bg);
+  width: 100%;
+  max-width: 420px;
+  max-height: 90svh;
+  overflow-y: auto;
+  border-radius: 28px 28px 0 0;
+  padding: 18px 24px 30px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+@media (min-width: 640px) {
+  .sheet {
+    border-radius: 28px;
+  }
+}
+
+.sheet-handle {
+  width: 42px;
+  height: 5px;
+  border-radius: 99px;
+  background: var(--color-border);
+  flex-shrink: 0;
+}
+
+.sheet-logo {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: var(--color-accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-heading);
+  font-size: 24px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.sheet h2 {
+  font-size: 22px;
+  text-align: center;
+}
+
+.field {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+
+.field label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.field input {
+  width: 100%;
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 13px 15px;
+  font-size: 14px;
+  color: var(--color-text);
+  min-height: 44px;
+}
+
+.field input::placeholder {
+  color: var(--color-placeholder);
+}
+
+.field input:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.btn-primary {
+  width: 100%;
+  background: var(--color-accent);
+  color: #fff;
+  border: none;
+  border-radius: 14px;
+  padding: 14px;
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+  min-height: 48px;
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  width: 100%;
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1.5px solid var(--color-border);
+  border-radius: 14px;
+  padding: 13px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  min-height: 46px;
+}
+
+.btn-text {
+  background: none;
+  border: none;
+  color: var(--color-accent);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 8px;
+}
+
+.form-error {
+  color: var(--color-danger-text);
+  background: var(--color-danger-bg);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  width: 100%;
+  text-align: center;
+}
+
+.form-info {
+  color: var(--color-success-text);
+  background: var(--color-success-bg);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  width: 100%;
+  text-align: center;
+}
+
+.muted {
+  color: var(--color-text-muted);
+  font-size: 13.5px;
+  text-align: center;
+}
