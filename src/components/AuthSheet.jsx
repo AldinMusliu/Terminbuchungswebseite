@@ -157,11 +157,15 @@ export default function AuthSheet({ initialMode = 'login', bookingContext, onClo
                 id="register-password"
                 type="password"
                 required
-                minLength={6}
+                minLength={8}
+                aria-describedby="register-password-hint"
                 placeholder="••••••••"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
               />
+              <p id="register-password-hint" className="field-hint">
+                Mindestens 8 Zeichen.
+              </p>
             </div>
             <div className="field">
               <label htmlFor="register-password-confirm">Passwort bestätigen</label>
@@ -169,7 +173,7 @@ export default function AuthSheet({ initialMode = 'login', bookingContext, onClo
                 id="register-password-confirm"
                 type="password"
                 required
-                minLength={6}
+                minLength={8}
                 placeholder="••••••••"
                 value={passwordConfirm}
                 onChange={(event) => setPasswordConfirm(event.target.value)}
