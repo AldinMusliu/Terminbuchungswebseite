@@ -3,6 +3,11 @@
 Status: **Live in Supabase.** Migration `supabase/migrations/20260808120000_initial_schema.sql`
 wurde erfolgreich ausgeführt (RLS aktiv, Doppelbuchungsschutz verifiziert).
 
+Nachträgliche Migrationen:
+- `20260814100000_dienstleistungen_preis.sql` — Preis-Feld `preis_rappen` ergänzt
+- `20260814100100_dienstleistungen_preis_pflicht.sql` — setzt `preis_rappen` auf Pflichtfeld
+  (erst ausführen, wenn alle Zeilen einen Preis haben)
+
 ## Übersicht
 
 ```
@@ -14,6 +19,7 @@ profiles                          dienstleistungen
   full_name                         name
   phone                             kategorie (kosmetik | laser | tattoo_entfernung)
   created_at                        dauer_minuten
+     │                              preis_rappen
      │                              aktiv
      │ 1:n                          created_at
      │                                 │ 1:n
@@ -69,12 +75,18 @@ create table public.dienstleistungen (
   name text not null,
   kategorie text not null check (kategorie in ('kosmetik','laser','tattoo_entfernung')),
   dauer_minuten integer not null check (dauer_minuten > 0),
+  preis_rappen integer not null check (preis_rappen >= 0),
   aktiv boolean not null default true,
   created_at timestamptz not null default now()
 );
 ```
 
 `aktiv` statt Löschen: eine deaktivierte Behandlung bleibt für bestehende Termine referenzierbar.
+
+`preis_rappen` speichert den Preis als ganze Rappen (`9000` = CHF 90.00), nicht als
+Kommazahl — Ganzzahlen können keine Rundungsfehler bekommen. Formatiert wird erst
+in der UI (`preis_rappen / 100`). Preis ist Pflichtfeld: jede Behandlung, auch eine
+deaktivierte, braucht einen Preis.
 
 ### `sperrzeiten`
 Zeiträume innerhalb der festen Öffnungszeiten, die die Admin gezielt blockiert
@@ -166,8 +178,6 @@ Details und Begründungen: siehe `docs/decisions.md`.
 
 ## Offen / noch zu klären
 
-- `dienstleistungen` hat noch kein Preis-Feld, das Figma-Mockup zeigt aber überall Preise
-  (z.B. "CHF 90") — Migration nötig, sobald die Dienstleistungsseite gebaut wird.
 - Buchungen nur für registrierte Kundinnen (`kundin_id` ist Pflicht, kein Gast-Feld) — auch wenn die Admin den Termin selbst einträgt, muss vorher ein Kundinnen-Konto existieren.
 - Trigger, der beim Buchen prüft, ob der gewählte Slot innerhalb der festen Öffnungszeiten liegt und nicht mit einer `sperrzeiten`-Zeile kollidiert — wird beim Bau der Buchungslogik ergänzt, nicht Teil des Basisschemas.
 - Kundinnen können eigene Termine nur stornieren (Status ändern), nicht Zeit/Dienstleistung nachträglich ändern — wird über einen Trigger bei der Buchungs-UI umgesetzt. Die Admin ist davon ausgenommen und darf jeden Termin frei bearbeiten.
