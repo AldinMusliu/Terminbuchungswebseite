@@ -7,6 +7,8 @@ Nachträgliche Migrationen:
 - `20260814100000_dienstleistungen_preis.sql` — Preis-Feld `preis_rappen` ergänzt
 - `20260814100100_dienstleistungen_preis_pflicht.sql` — setzt `preis_rappen` auf Pflichtfeld
   (erst ausführen, wenn alle Zeilen einen Preis haben)
+- `20260814110000_freie_slots.sql` — Funktion `freie_slots()` für die Verfügbarkeitsberechnung
+- `20260814120000_grants_fix.sql` — Tabellen-Rechte für `anon`/`authenticated` explizit gesetzt
 
 ## Übersicht
 
@@ -160,6 +162,41 @@ alter table public.termine
   where (status = 'bestaetigt');
 ```
 
+## Funktionen
+
+### `freie_slots(p_datum date, p_dienstleistung_id uuid) → setof timestamptz`
+
+Liefert die freien Startzeiten für eine Dienstleistung an einem Tag.
+
+```js
+const { data } = await supabase.rpc('freie_slots', {
+  p_datum: '2026-09-02',
+  p_dienstleistung_id: '…',
+});
+// → ['2026-09-02T07:00:00+00:00', '2026-09-02T07:15:00+00:00', …]
+```
+
+Berücksichtigt in dieser Reihenfolge: Öffnungszeiten des Wochentags (geschlossen → leeres
+Ergebnis), 15-Minuten-Raster für Startzeiten, volle `dauer_minuten` muss vor Ladenschluss
+reinpassen, keine Überlappung mit bestätigten `termine`, keine Überlappung mit `sperrzeiten`,
+nichts in der Vergangenheit.
+
+**Zeitzone:** `oeffnungszeiten` speichert reine Uhrzeiten ohne Zone. Die Funktion setzt sie
+per `at time zone 'Europe/Zurich'` auf das Datum und erhält damit echte `timestamptz`-Werte.
+Sommer-/Winterzeit läuft automatisch mit — 09:00 Zürich ist im Sommer 07:00 UTC und im
+Winter 08:00 UTC, ohne dass irgendwo ein Offset hartcodiert ist.
+
+**Anschlusstermine:** Zeitbereiche sind `[start, ende)`. Ein Termin bis 13:00 blockiert den
+Slot 13:00 also nicht — direkt anschliessen ist erlaubt. Das ist dieselbe Logik, die auch
+der Doppelbuchungs-Constraint auf `termine` verwendet, beide bleiben damit konsistent.
+
+`security definer`, weil `termine_select_own` sonst fremde Termine verbergen würde und die
+Berechnung falsch wäre. Zurückgegeben werden ausschliesslich Zeitstempel, keine Termindaten.
+Begründung siehe `docs/decisions.md`.
+
+Testfälle: `supabase/tests/freie_slots_test.sql` (läuft in einer Transaktion mit ROLLBACK,
+hinterlässt keine Daten).
+
 ## RLS-Policies (Zusammenfassung)
 
 | Tabelle | Öffentlich (`anon`) | Kundin (`authenticated`) | Admin |
@@ -170,6 +207,16 @@ alter table public.termine
 | `sperrzeiten` | SELECT alle | SELECT alle | INSERT/UPDATE/DELETE |
 | `termine` | – | SELECT/INSERT nur eigene (`kundin_id = auth.uid()`) | SELECT/INSERT/UPDATE alle (jede Kundin, jede Zeit) |
 
+Diese Tabelle beschreibt nur die **RLS-Schicht** (welche Zeilen). Damit eine Rolle die Tabelle
+überhaupt anfassen darf, braucht es zusätzlich ein `GRANT` — gesetzt in
+`20260814120000_grants_fix.sql`. Fehlt das, scheitert die Abfrage mit
+`permission denied for table …`, bevor RLS überhaupt ausgewertet wird. Bei jeder neuen Tabelle
+gehören beide Schichten in dieselbe Migration; Details in `docs/decisions.md`.
+
+Umgekehrt gilt: **`permission denied` heisst nicht zwangsläufig, dass Rechte fehlen** — es kann
+auch bedeuten, dass die Anfrage mit der falschen Rolle ankommt (z.B. als `anon`, weil der
+Auth-Token nicht mitgeschickt wurde). Ein realer Fall dazu steht in `docs/troubleshooting.md`.
+
 `dienstleistungen`, `oeffnungszeiten` und `sperrzeiten` sind bewusst auch ohne Login lesbar
 (z.B. für eine öffentliche Übersichtsseite) — es sind keine personenbezogenen Daten. Buchen
 selbst bleibt an ein Kundinnen-Konto gebunden.
@@ -179,5 +226,11 @@ Details und Begründungen: siehe `docs/decisions.md`.
 ## Offen / noch zu klären
 
 - Buchungen nur für registrierte Kundinnen (`kundin_id` ist Pflicht, kein Gast-Feld) — auch wenn die Admin den Termin selbst einträgt, muss vorher ein Kundinnen-Konto existieren.
-- Trigger, der beim Buchen prüft, ob der gewählte Slot innerhalb der festen Öffnungszeiten liegt und nicht mit einer `sperrzeiten`-Zeile kollidiert — wird beim Bau der Buchungslogik ergänzt, nicht Teil des Basisschemas.
+- **Offene Lücke: `freie_slots()` berechnet, erzwingt aber nichts.** Die Funktion sagt, was
+  frei ist — sie hindert niemanden daran, per direktem INSERT einen Termin ausserhalb der
+  Öffnungszeiten oder über einer Sperrzeit anzulegen. Die RLS-Policy `termine_insert_own`
+  prüft nur `kundin_id = auth.uid()`, der Exclusion-Constraint nur Überlappung mit anderen
+  Terminen. Ein Trigger auf `termine`, der dieselben Regeln beim INSERT/UPDATE durchsetzt,
+  fehlt noch. Solange er fehlt, ist die Slot-Auswahl in der UI eine Bequemlichkeit, keine
+  Absicherung.
 - Kundinnen können eigene Termine nur stornieren (Status ändern), nicht Zeit/Dienstleistung nachträglich ändern — wird über einen Trigger bei der Buchungs-UI umgesetzt. Die Admin ist davon ausgenommen und darf jeden Termin frei bearbeiten.

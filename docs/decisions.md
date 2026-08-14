@@ -75,6 +75,96 @@ Rolle für jeden INSERT/UPDATE — die Admin kann also auch versehentlich keine 
 Buchungen bleiben trotzdem an registrierte Kundinnen-Konten gebunden (kein Gast-Freitextfeld),
 damit RLS und Datenmodell konsistent bleiben.
 
+## Tabellen-Rechte (GRANT) werden explizit gesetzt, nicht vererbt
+
+**Entscheidung:** Jede Tabelle bekommt in der Migration explizite `GRANT`-Statements für
+`anon` und `authenticated`, statt sich auf die *default privileges* der Supabase-Instanz zu
+verlassen. Umgesetzt in `supabase/migrations/20260814120000_grants_fix.sql`.
+
+> **Zur Entstehung:** Diese Migration entstand aus der Vermutung, fehlende GRANTs seien
+> die Ursache eines `permission denied for table termine`. Das war eine Fehldiagnose — die
+> Rechte waren bereits korrekt gesetzt, der Fehler kam vom Test-Browser (siehe
+> `docs/troubleshooting.md`). Die Migration ist damit faktisch ein No-op. Sie bleibt
+> trotzdem, weil explizite Rechte der vererbten Automatik vorzuziehen sind: sie stehen
+> versioniert neben den Policies und sind bei einem Neuaufsetzen der Datenbank reproduzierbar.
+> Der Dateiname `grants_fix` ist im Nachhinein irreführend.
+
+**Warum:** Zugriff in Postgres hat **zwei unabhängige Schichten**, und RLS ist nur die zweite:
+
+| Schicht | Frage | Geregelt durch |
+|---|---|---|
+| 1. GRANT | Darf die Rolle die Tabelle überhaupt anfassen? | `grant … on … to …` |
+| 2. RLS | Welche *Zeilen* darf sie dabei sehen/ändern? | `create policy …` |
+
+Fehlt Schicht 1, kommt Postgres bei RLS gar nicht erst an: die Abfrage scheitert mit
+`permission denied for table …`, egal wie korrekt die Policy formuliert ist. Das ist eine
+verwirrende Fehlerquelle, weil man den Fehler instinktiv bei der Policy sucht — dort ist er
+aber nie. Umgekehrt gilt: ein GRANT allein öffnet nichts, solange RLS aktiv ist und keine
+Policy passt. Beide Schichten müssen stimmen.
+
+**Merksatz für neue Tabellen:** RLS aktivieren, Policies schreiben, **und** die GRANTs setzen.
+Alle drei gehören in dieselbe Migration.
+
+**Wie man den echten Zustand prüft:** `information_schema.role_table_grants` ist dafür
+irreführend — die View zeigt nur Zeilen, bei denen die abfragende Rolle selbst Grantor oder
+Grantee ist. Rechte für `anon`/`authenticated` fehlen dort oft in der Anzeige, obwohl sie
+existieren. Verlässlich ist `has_table_privilege()`:
+
+```sql
+select t.table_name,
+       has_table_privilege('authenticated', 'public.'||t.table_name, 'select') as sel,
+       has_table_privilege('anon',          'public.'||t.table_name, 'select') as anon_sel
+from information_schema.tables t
+where t.table_schema = 'public' and t.table_type = 'BASE TABLE';
+```
+
+**Kein `grant all`:** Vergeben wird nur, was auch eine Policy erlaubt — `termine` bekommt z.B.
+kein DELETE, weil Stornieren ein Status-Update ist und die Historie erhalten bleiben soll. So
+könnte selbst ein Fehler in einer künftigen Policy keine Termine löschen: das Tabellenrecht
+fehlt schlicht.
+
+**Zur Admin-Rolle:** "Admin" ist keine eigene Datenbankrolle. Die Admin meldet sich normal an
+und ist damit ebenfalls `authenticated`; ihre Sonderrechte kommen allein aus `is_admin()` in
+den Policies. Deshalb braucht `authenticated` auch die schreibenden Rechte auf
+`dienstleistungen`, `oeffnungszeiten` und `sperrzeiten` — für normale Kundinnen bleibt das
+folgenlos, sie scheitern an der RLS-Bedingung.
+
+## Verfügbarkeits-Berechnung als Datenbank-Funktion, nicht im Frontend
+
+**Entscheidung:** Freie Termin-Slots werden von der Postgres-Funktion
+`public.freie_slots(datum, dienstleistung_id)` berechnet und per RPC aufgerufen,
+nicht im JavaScript des Frontends.
+
+**Warum:** Die RLS-Policy `termine_select_own` lässt eine Kundin ausschliesslich ihre
+**eigenen** Termine sehen. Freie Slots zu berechnen setzt aber voraus, alle bestätigten
+Termine zu kennen. Im Frontend wäre das nur möglich, indem man `termine` für alle lesbar
+macht — womit offengelegt wäre, wer wann einen Termin hat. Die Berechnung in der Datenbank
+löst beides: sie sieht alle Termine, gibt aber ausschliesslich freie Startzeiten zurück,
+nie Namen, IDs oder sonstige Termindaten. Zusätzlich gibt es damit nur eine einzige Quelle
+der Wahrheit statt einer Logik, die in Kundenansicht und Adminansicht getrennt gepflegt
+werden müsste.
+
+**Wie abgesichert:** `security definer` (umgeht RLS kontrolliert) zusammen mit
+`set search_path = ''` — ohne das könnte ein manipulierter `search_path` eigenen Code mit
+den Rechten des Function-Owners ausführen. Ausführungsrecht ist explizit auf `anon` und
+`authenticated` gesetzt statt auf dem Postgres-Standard `PUBLIC` zu bleiben.
+
+**Bewusst in Kauf genommen:** Aus den freien Zeiten lässt sich ablesen, *dass* eine Zeit
+belegt ist — nicht aber von wem oder womit. Das ist jedem Buchungssystem inhärent: eine
+Terminauswahl, die nicht verrät was frei ist, wäre keine.
+
+## 15-Minuten-Raster für Termin-Startzeiten
+
+**Entscheidung:** Termine können alle 15 Minuten starten. Das Raster gilt nur für die
+**Startzeit** — das Ende ergibt sich aus `dauer_minuten` und darf krumm fallen.
+
+**Warum:** `dauer_minuten` ist pro Dienstleistung frei wählbar, es gibt bewusst kein festes
+30/60-Schema. Bei einem 30-Minuten-Raster entstünden zwischen unterschiedlich langen
+Behandlungen regelmässig Lücken, die zu kurz zum Buchen und damit verschenkt sind. 15 Minuten
+verschneiden deutlich weniger Zeit. Der Preis dafür sind mehr Buttons in der Slot-Auswahl —
+ein reines UI-Thema, das sich in der Darstellung lösen lässt, während verlorene Arbeitszeit
+sich nicht zurückholen lässt.
+
 ## Soft-Delete bei Dienstleistungen (`aktiv`-Flag statt Löschen)
 
 **Entscheidung:** Dienstleistungen werden über `aktiv = false` deaktiviert statt gelöscht.
