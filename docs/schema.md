@@ -9,6 +9,8 @@ Nachträgliche Migrationen:
   (erst ausführen, wenn alle Zeilen einen Preis haben)
 - `20260814110000_freie_slots.sql` — Funktion `freie_slots()` für die Verfügbarkeitsberechnung
 - `20260814120000_grants_fix.sql` — Tabellen-Rechte für `anon`/`authenticated` explizit gesetzt
+- `20260815100000_dienstleistungen_preis_ab.sql` — Feld `preis_ab` für Startpreise ("ab CHF 75.00")
+- `20260815100100_dienstleistungen_katalog.sql` — echter Katalog (42 Behandlungen), ersetzt die Testeinträge
 
 ## Übersicht
 
@@ -78,6 +80,7 @@ create table public.dienstleistungen (
   kategorie text not null check (kategorie in ('kosmetik','laser','tattoo_entfernung')),
   dauer_minuten integer not null check (dauer_minuten > 0),
   preis_rappen integer not null check (preis_rappen >= 0),
+  preis_ab boolean not null default false,
   aktiv boolean not null default true,
   created_at timestamptz not null default now()
 );
@@ -89,6 +92,15 @@ create table public.dienstleistungen (
 Kommazahl — Ganzzahlen können keine Rundungsfehler bekommen. Formatiert wird erst
 in der UI (`preis_rappen / 100`). Preis ist Pflichtfeld: jede Behandlung, auch eine
 deaktivierte, braucht einen Preis.
+
+`preis_ab` kennzeichnet Startpreise. Bei `true` zeigt die UI `ab CHF 75.00` statt
+`CHF 75.00` — betrifft die Wimpernverlängerungen, deren Endpreis vom Aufwand abhängt.
+Bei `preis_rappen = 0` zeigt die UI `Kostenlos` (die drei Beratungsgespräche).
+
+Der Katalog ist in `20260815100100_dienstleistungen_katalog.sql` als Daten-Migration
+abgelegt, damit er versioniert ist und nicht nur im Table Editor lebt. Die Dauern
+darin sind Schätzwerte und noch **nicht vom Betrieb bestätigt** — Stand und
+Rückfragen in `docs/dienstleistungen-dauern.md`.
 
 ### `sperrzeiten`
 Zeiträume innerhalb der festen Öffnungszeiten, die die Admin gezielt blockiert

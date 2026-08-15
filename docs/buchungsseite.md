@@ -10,7 +10,7 @@ Schema: `docs/schema.md` · Architektur-Entscheidungen: `docs/decisions.md`
 
 ## 1 — Preis-Feld für Dienstleistungen
 
-**Status:** Migrationen geschrieben, noch nicht in Supabase ausgeführt.
+**Status:** Beide Migrationen in Supabase ausgeführt, Preise eingetragen.
 
 ### Was
 
@@ -117,4 +117,104 @@ ist korrekt, wird aber Rückfragen provozieren.
 - Keine Mindest-Vorlaufzeit. Aktuell wäre ein Termin in 5 Minuten buchbar, solange er in der
   Zukunft liegt.
 - Der JS-Aufruf (`supabase.rpc('freie_slots', …)`) entsteht mit der Datums-/Zeitauswahl in
-  Teilaufgabe 3.
+  Teilaufgabe 4.
+
+---
+
+## 3 — UI: Dienstleistungsauswahl
+
+**Status:** Gebaut, `npm run lint` und `npm run build` laufen sauber. Im Browser noch
+nicht durchgeklickt.
+
+### Was
+
+| Datei | Zweck |
+|---|---|
+| `src/components/ServiceSelection.jsx` | lädt aktive Dienstleistungen, gruppiert nach Kategorie, Karten mit Name/Dauer/Preis |
+| `src/components/ServiceSelection.css` | Kartenraster, einspaltig mobil, ab 640px zweispaltig |
+| `src/components/BuchungsFlow.jsx` | Container für den mehrstufigen Flow, hält die Auswahl |
+| `src/components/BuchungsFlow.css` | fixierte Auswahl-Leiste am unteren Rand |
+| `src/App.jsx`, `src/App.css` | Platzhalter im `<main>` durch den Flow ersetzt |
+
+### Warum
+
+**Auswahl-State liegt im `BuchungsFlow`, nicht in `ServiceSelection`.** Ab Teilaufgabe 4
+kommen Datum und Uhrzeit dazu, ab 5 der Bestätigungsschritt — die brauchen alle dieselbe
+Dienstleistung (für `freie_slots` die `id`, für die Zusammenfassung Name und Preis).
+`ServiceSelection` bekommt darum nur `selectedId` und `onSelect` und bleibt zustandslos.
+`onSelect` gibt das **ganze** Objekt zurück, nicht bloss die `id`, damit die späteren
+Schritte Dauer und Preis nicht erneut aus der DB holen müssen.
+
+**Kategorie-Beschriftungen stehen im Frontend.** Die DB kennt nur die technischen Werte
+aus dem check-Constraint (`kosmetik`, `laser`, `tattoo_entfernung`). Die Konstante
+`KATEGORIEN` legt gleichzeitig die Anzeigereihenfolge fest — eine Sortierung nach
+`kategorie` in SQL wäre alphabetisch und damit willkürlich. Kategorien ohne aktive
+Einträge fallen automatisch raus.
+
+**`.eq('aktiv', true)` trotz RLS.** Die Policy gibt `anon`/`authenticated` ohnehin nur
+aktive Zeilen frei. Der Filter kostet nichts und greift zusätzlich für die Admin-Rolle,
+die alle Zeilen sehen darf — sonst tauchten deaktivierte Behandlungen in der Kundinnen-
+Ansicht auf, sobald die Admin eingeloggt ist.
+
+**Preis-Formatierung erst hier.** `preis_rappen / 100` durch
+`Intl.NumberFormat('de-CH', { currency: 'CHF' })` → `CHF 90.00`. Das ist die in
+Teilaufgabe 1 angekündigte UI-Seite der Rappen-Ganzzahl.
+
+**Karten sind `<button>`, keine `<div>`.** Damit funktionieren Tastatur und Screenreader
+ohne Zusatzarbeit; `aria-pressed` macht die Auswahl ansagbar. Der aktive Zustand ist
+nicht nur farbig, sondern auch am dickeren Rand erkennbar.
+
+### Testhinweise
+
+`npm run dev`, dann:
+
+- Karten erscheinen nach Kategorie gruppiert, Preise als `CHF 90.00`, Dauer als
+  `45 Min.` bzw. `1 Std. 30 Min.`
+- Karte antippen → Rand wird akzentfarben, Leiste unten zeigt den Namen
+- Andere Karte antippen → Auswahl wechselt, es bleibt genau eine aktiv
+- Mit Tab durchsteppen, mit Enter/Leertaste auswählen
+- Schmales Fenster (Handy-Breite): eine Spalte, Leiste verdeckt die letzte Karte nicht
+- Eine Behandlung in Supabase auf `aktiv = false` setzen, neu laden → verschwindet;
+  letzter Eintrag einer Kategorie → ganze Gruppe verschwindet
+
+### Nachtrag — echter Katalog importiert
+
+Nach dem Bau der Komponente kam der echte Behandlungskatalog als CSV (42 Einträge).
+Vier Punkte passten nicht ins bestehende Schema:
+
+| Datei | Zweck |
+|---|---|
+| `supabase/migrations/20260815100000_dienstleistungen_preis_ab.sql` | Feld `preis_ab` für Startpreise |
+| `supabase/migrations/20260815100100_dienstleistungen_katalog.sql` | 42 Behandlungen, ersetzt die Testeinträge |
+| `docs/dienstleistungen-dauern.md` | Dauer-Vorschläge zum Gegenlesen + offene Rückfragen |
+
+**Dauer fehlte bei 40 von 42 Zeilen.** `dauer_minuten` ist Pflichtfeld und die
+Grundlage von `freie_slots` — ohne Dauer kein Termin. Die Werte in der Migration sind
+branchenübliche Schätzwerte, **nicht vom Betrieb bestätigt**. Bis das gegengelesen ist,
+stimmt die Slot-Berechnung rechnerisch, aber nicht zwingend mit der Realität überein.
+
+**`preis_ab` statt Fixpreis für die Lashes.** Vier Einträge sind im CSV als „ab-Preis"
+markiert. Ein Fixpreis auf der Karte wäre gegenüber Kundinnen schlicht falsch. Die drei
+Beratungen sind mit `preis_rappen = 0` erfasst und werden als „Kostenlos" angezeigt —
+`preis_ab` bleibt dort `false`, „ab CHF 0.00" wäre sinnlos.
+
+**Namen mit echten Umlauten.** Das CSV war ASCII („Groesse", „Ruecken"), die Namen
+stehen aber auf der Kundinnen-Seite. Schweizer Schreibweise, `ss` statt `ß`.
+
+**Katalog als Daten-Migration, nicht per Table Editor.** Damit ist der Katalog
+versioniert und auf einer frischen Datenbank reproduzierbar.
+
+### Offen
+
+- **Die Dauern sind ungeprüft.** `docs/dienstleistungen-dauern.md` durchgehen, bevor
+  die Buchung scharf geht. Enthält ausserdem drei inhaltliche Rückfragen (Lashes
+  Neuset vs. Auffüllen, Zonen-Pakete, 15-Minuten-Termine).
+- Die Spalte `notiz` aus dem CSV ist nicht importiert — „ab-Preis" ist über `preis_ab`
+  abgebildet, „Konsultation" hat kein Feld.
+- **Der "Weiter"-Button ist bewusst deaktiviert** — Ziel ist Teilaufgabe 4.
+- Das Figma-Mockup lag mir nicht vor; die Karten folgen den bestehenden Tokens aus
+  `index.css` und der Optik von `MeineTermine`. Feinschliff gegen Figma steht in Phase 7.
+- Kein Zurücksetzen der Auswahl, wenn eine Behandlung während der Sitzung deaktiviert
+  wird. Unkritisch, weil der INSERT in Teilaufgabe 5 ohnehin gegen die DB läuft.
+- Die Liste wird einmal beim Mount geladen, ohne Neuladen im Hintergrund. Für einen
+  Katalog, der sich selten ändert, ausreichend.

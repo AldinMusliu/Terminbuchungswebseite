@@ -4,6 +4,7 @@ import { useAuth } from './context/authHooks';
 import Header from './components/Header';
 import AuthSheet from './components/AuthSheet';
 import MeineTermine from './components/MeineTermine';
+import BuchungsFlow from './components/BuchungsFlow';
 import './App.css';
 
 function AppContent() {
@@ -23,8 +24,8 @@ function AppContent() {
         onAccountClick={() => setTermineOpen(true)}
       />
 
-      <main className="app-placeholder">
-        <p>Hier entsteht als Naechstes die Buchungsseite.</p>
+      <main className="app-main">
+        <BuchungsFlow />
       </main>
 
       {authOpen && <AuthSheet initialMode={authMode} onClose={() => setAuthOpen(false)} />}
